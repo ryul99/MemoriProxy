@@ -4,4 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "litellm[proxy]>=1.80.0",
+    "memorisdk>=2.3.2",
+]
