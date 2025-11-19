@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from litellm import completion as litellm_completion
 from litellm.proxy import proxy_server as litellm_proxy_server
+from memori import ConfigManager, Memori
 
 PROXY_HOST = os.getenv("LITELLM_PROXY_HOST", "127.0.0.1")
 PROXY_PORT = int(os.getenv("LITELLM_PROXY_PORT", "10001"))
@@ -28,6 +29,12 @@ EXCLUDED_PROXY_HEADERS = {
     "trailers",
     "upgrade",
 }
+
+config = ConfigManager()
+config.auto_load()  # Loads from environment or config files
+
+memori = Memori(conscious_ingest=True, auto_ingest=True)
+memori.enable()
 
 app = FastAPI(title="MemoriProxy")
 
