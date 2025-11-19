@@ -11,3 +11,8 @@ dependencies = [
     "memorisdk>=2.3.2",
     "uvicorn[standard]>=0.29.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]
