@@ -1,14 +1,15 @@
 import asyncio
+import json
 import os
 import threading
 import time
 from contextlib import suppress
-from typing import Any, Dict
+from typing import Any, Dict, Iterator
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from litellm import completion as litellm_completion
 from litellm.proxy import proxy_server as litellm_proxy_server
 from memori import ConfigManager, Memori
@@ -97,6 +98,14 @@ def _require_http_client() -> httpx.AsyncClient:
     return _http_client
 
 
+def _serialize_llm_payload(llm_obj: Any) -> Any:
+    if hasattr(llm_obj, "model_dump"):
+        return llm_obj.model_dump()
+    if hasattr(llm_obj, "dict"):
+        return llm_obj.dict()
+    return llm_obj
+
+
 @app.on_event("startup")
 async def _startup_event() -> None:
     global _http_client
@@ -121,16 +130,37 @@ async def _shutdown_event() -> None:
 
 @app.post("/chat/completions")
 @app.post("/v1/chat/completions")
-async def chat_completions_endpoint(request: Request) -> JSONResponse:
+async def chat_completions_endpoint(
+    request: Request,
+) -> Response:
     try:
         payload: Dict[str, Any] = await request.json()
     except Exception as exc:  # pragma: no cover - FastAPI handles parsing
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    if payload.get("stream"):
-        raise HTTPException(
-            status_code=400, detail="Streaming is not supported on this endpoint"
-        )
+    streaming_requested = bool(payload.pop("stream", False))
+
+    if streaming_requested:
+        payload["stream"] = True
+        try:
+            llm_stream = litellm_completion(**payload)
+        except Exception as exc:  # pragma: no cover - depends on provider config
+            raise HTTPException(
+                status_code=502, detail=f"LiteLLM completion failed: {exc}"
+            ) from exc
+
+        def event_stream() -> Iterator[str]:
+            try:
+                for chunk in llm_stream:
+                    data = _serialize_llm_payload(chunk)
+                    yield f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+            except Exception as exc:  # pragma: no cover - depends on provider config
+                raise HTTPException(
+                    status_code=502, detail=f"LiteLLM completion failed: {exc}"
+                ) from exc
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     try:
         llm_response = litellm_completion(**payload)
@@ -139,12 +169,7 @@ async def chat_completions_endpoint(request: Request) -> JSONResponse:
             status_code=502, detail=f"LiteLLM completion failed: {exc}"
         ) from exc
 
-    if hasattr(llm_response, "model_dump"):
-        data = llm_response.model_dump()
-    elif hasattr(llm_response, "dict"):
-        data = llm_response.dict()
-    else:
-        data = llm_response  # fallback for unexpected return types
+    data = _serialize_llm_payload(llm_response)
 
     return JSONResponse(content=data)
 
