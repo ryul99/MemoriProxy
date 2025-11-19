@@ -119,9 +119,9 @@ async def _shutdown_event() -> None:
         thread.join(timeout=5)
 
 
-@app.post("/completions")
-@app.post("/v1/completions")
-async def completions_endpoint(request: Request) -> JSONResponse:
+@app.post("/chat/completions")
+@app.post("/v1/chat/completions")
+async def chat_completions_endpoint(request: Request) -> JSONResponse:
     try:
         payload: Dict[str, Any] = await request.json()
     except Exception as exc:  # pragma: no cover - FastAPI handles parsing
