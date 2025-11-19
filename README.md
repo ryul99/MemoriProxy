@@ -37,6 +37,8 @@ Key environment variables (defaults shown in parentheses):
 
 Memori settings are managed through `ConfigManager.auto_load()`, so `.env`, environment variables, or config files are automatically consumed.
 
+> ℹ️ Set `LITELLM_CONFIG_PATH` to a valid LiteLLM config file to bootstrap the embedded proxy; if the variable is unset or the file is missing, proxying routes return `503` and no background server is launched.
+
 ## Running the server
 After installing the project (`pip install .` or `pip install -e .`), you can start it with the CLI:
 ```bash

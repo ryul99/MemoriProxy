@@ -4,6 +4,7 @@ import os
 import threading
 import time
 from contextlib import suppress
+from pathlib import Path
 from typing import Any, Dict, Iterator
 
 import httpx
@@ -31,6 +32,20 @@ EXCLUDED_PROXY_HEADERS = {
     "upgrade",
 }
 
+
+def _resolve_litellm_config_path() -> str | None:
+    config_path = os.getenv("LITELLM_CONFIG_PATH")
+    if not config_path:
+        return None
+    path = Path(config_path)
+    if path.is_file():
+        return str(path)
+    return None
+
+
+LITELLM_CONFIG_PATH = _resolve_litellm_config_path()
+PROXY_ENABLED = LITELLM_CONFIG_PATH is not None
+
 config = ConfigManager()
 config.auto_load()  # Loads from environment or config files
 
@@ -48,9 +63,10 @@ def _run_proxy_server() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    config_path = os.getenv("LITELLM_CONFIG_PATH")
-    if config_path:
-        litellm_proxy_server.user_config_file_path = config_path
+    config_path = LITELLM_CONFIG_PATH
+    if not config_path:
+        return
+    litellm_proxy_server.user_config_file_path = config_path
 
     loop.run_until_complete(litellm_proxy_server.initialize(config=config_path))
 
@@ -68,6 +84,9 @@ def _run_proxy_server() -> None:
 
 
 def _start_proxy_thread() -> None:
+    if not PROXY_ENABLED:
+        return
+
     global _proxy_thread
     if _proxy_thread and _proxy_thread.is_alive():
         return
@@ -93,6 +112,10 @@ async def _ensure_proxy_ready() -> None:
 
 
 def _require_http_client() -> httpx.AsyncClient:
+    if not PROXY_ENABLED:
+        raise HTTPException(
+            status_code=503, detail="LiteLLM proxy disabled (no config file)"
+        )
     if _http_client is None:
         raise HTTPException(status_code=503, detail="LiteLLM proxy is not ready")
     return _http_client
@@ -108,6 +131,9 @@ def _serialize_llm_payload(llm_obj: Any) -> Any:
 
 @app.on_event("startup")
 async def _startup_event() -> None:
+    if not PROXY_ENABLED:
+        return
+
     global _http_client
     _start_proxy_thread()
     if _http_client is None:
