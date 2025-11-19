@@ -38,6 +38,10 @@ Key environment variables (defaults shown in parentheses):
 Memori settings are managed through `ConfigManager.auto_load()`, so `.env`, environment variables, or config files are automatically consumed.
 
 ## Running the server
+After installing the project (`pip install .` or `pip install -e .`), you can start it with the CLI:
+```bash
+memori-proxy
+```
 Example command (matching the one used during development):
 ```bash
 MEMORI_LOGGING__LEVEL=DEBUG \

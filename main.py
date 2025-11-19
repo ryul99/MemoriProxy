@@ -214,10 +214,14 @@ async def proxy_all_other_requests(full_path: str, request: Request) -> Response
     return forwarded_response
 
 
-if __name__ == "__main__":
+def cli() -> None:
     uvicorn.run(
         "main:app",
         host=os.getenv("APP_HOST", "0.0.0.0"),
         port=int(os.getenv("APP_PORT", "8000")),
         reload=False,
     )
+
+
+if __name__ == "__main__":
+    cli()
