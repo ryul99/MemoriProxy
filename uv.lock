@@ -1176,6 +1176,8 @@ name = "memoriproxy"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "litellm", extra = ["proxy"] },
     { name = "memorisdk" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1183,6 +1185,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.121.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", extras = ["proxy"], specifier = ">=1.80.0" },
     { name = "memorisdk", specifier = ">=2.3.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0" },
