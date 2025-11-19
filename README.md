@@ -16,11 +16,13 @@ MemoriProxy is a FastAPI service that embeds [Memori](https://github.com/GibsonA
 
 ## Installation
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .
+uv tool install .
 ```
-(Alternatively, use `uv pip install -e .`.)
+
+Or install directly from GitHub:
+```bash
+uv tool install https://github.com/ryul99/MemoriProxy.git
+```
 
 ## Configuration
 Key environment variables (defaults shown in parentheses):
