@@ -25,33 +25,34 @@ uv tool install https://github.com/ryul99/MemoriProxy.git
 ```
 
 ## Configuration
-Key environment variables (defaults shown in parentheses):
+Configuration is primarily handled via command-line arguments.
 
-| Variable | Description |
-| --- | --- |
-| `LITELLM_CONFIG_PATH` | Path to the LiteLLM YAML config (`./litellm_config.yaml`). |
-| `LITELLM_PROXY_HOST` (`127.0.0.1`) | Hostname for the embedded LiteLLM proxy. |
-| `LITELLM_PROXY_PORT` (`10001`) | Port for the proxy server. |
-| `LITELLM_PROXY_STARTUP_TIMEOUT` (`15`) | Seconds to wait for proxy readiness. |
-| `LITELLM_PROXY_LOG_LEVEL` (`warning`) | Logging level fed to Uvicorn for the proxy. |
-| `APP_HOST` (`0.0.0.0`) / `APP_PORT` (`8000`) | FastAPI host/port when launching via `python main.py`. |
-| `MEMORI_*` | Any Memori SDK settings (e.g., `MEMORI_LOGGING__LEVEL=DEBUG`). |
+| Argument | Default | Description |
+| --- | --- | --- |
+| `--host` | `0.0.0.0` | Host to bind the server to. |
+| `--port` | `8000` | Port to bind the server to. |
+| `--proxy-host` | `127.0.0.1` | Hostname for the embedded LiteLLM proxy. |
+| `--proxy-port` | `10001` | Port for the proxy server. |
+| `--proxy-timeout` | `15.0` | Seconds to wait for proxy readiness. |
+| `--proxy-log-level` | `warning` | Logging level fed to Uvicorn for the proxy. |
+| `--litellm-config` | `None` | Path to the LiteLLM YAML config (e.g., `./litellm_config.yaml`). |
 
-Memori settings are managed through `ConfigManager.auto_load()`, so `.env`, environment variables, or config files are automatically consumed.
+**Memori Configuration:**
+Memori settings are managed through `ConfigManager.auto_load()`, so they continue to use environment variables (e.g., `MEMORI_LOGGING__LEVEL=DEBUG`) or config files.
 
-> ℹ️ Set `LITELLM_CONFIG_PATH` to a valid LiteLLM config file to bootstrap the embedded proxy; if the variable is unset or the file is missing, proxying routes return `503` and no background server is launched.
+> ℹ️ Use `--litellm-config` to point to a valid LiteLLM config file to bootstrap the embedded proxy; if omitted or the file is missing, proxying routes return `503` and no background server is launched.
 
 ## Running the server
 After installing the project (`pip install .` or `pip install -e .`), you can start it with the CLI:
 ```bash
-memori-proxy
+memori-proxy --port 4000 --litellm-config ./litellm_config.yaml
 ```
-Example command (matching the one used during development):
+
+Or running from source:
 ```bash
-MEMORI_LOGGING__LEVEL=DEBUG \
-LITELLM_CONFIG_PATH=./litellm_config.yaml \
-python -m uvicorn main:app --host 0.0.0.0 --port 4000
+python src/main.py --port 4000 --litellm-config ./litellm_config.yaml
 ```
+
 This starts the FastAPI app, bootstraps LiteLLM in a background thread, and exposes:
 - `POST /chat/completions`
 - `POST /v1/chat/completions`

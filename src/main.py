@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import os
@@ -6,6 +7,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict, Iterator
+from dataclasses import dataclass
 
 import httpx
 import uvicorn
@@ -15,11 +17,23 @@ from litellm import completion as litellm_completion
 from litellm.proxy import proxy_server as litellm_proxy_server
 from memori import ConfigManager, Memori
 
-PROXY_HOST = os.getenv("LITELLM_PROXY_HOST", "127.0.0.1")
-PROXY_PORT = int(os.getenv("LITELLM_PROXY_PORT", "10001"))
-PROXY_STARTUP_TIMEOUT = float(os.getenv("LITELLM_PROXY_STARTUP_TIMEOUT", "15"))
-PROXY_LOG_LEVEL = os.getenv("LITELLM_PROXY_LOG_LEVEL", "warning")
-PROXY_BASE_URL = f"http://{PROXY_HOST}:{PROXY_PORT}"
+@dataclass
+class ProxyConfig:
+    host: str = "127.0.0.1"
+    port: int = 10001
+    startup_timeout: float = 15.0
+    log_level: str = "warning"
+    config_path: str | None = None
+
+    @classmethod
+    def base_url(cls) -> str:
+        return f"http://{cls.host}:{cls.port}"
+
+    @classmethod
+    def enabled(cls) -> bool:
+        return cls.config_path is not None
+
+
 EXCLUDED_PROXY_HEADERS = {
     "content-length",
     "transfer-encoding",
@@ -32,19 +46,6 @@ EXCLUDED_PROXY_HEADERS = {
     "upgrade",
 }
 
-
-def _resolve_litellm_config_path() -> str | None:
-    config_path = os.getenv("LITELLM_CONFIG_PATH")
-    if not config_path:
-        return None
-    path = Path(config_path)
-    if path.is_file():
-        return str(path)
-    return None
-
-
-LITELLM_CONFIG_PATH = _resolve_litellm_config_path()
-PROXY_ENABLED = LITELLM_CONFIG_PATH is not None
 
 config = ConfigManager()
 config.auto_load()  # Loads from environment or config files
@@ -63,7 +64,7 @@ def _run_proxy_server() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    config_path = LITELLM_CONFIG_PATH
+    config_path = ProxyConfig.config_path
     if not config_path:
         return
     litellm_proxy_server.user_config_file_path = config_path
@@ -72,9 +73,9 @@ def _run_proxy_server() -> None:
 
     config = uvicorn.Config(
         litellm_proxy_server.app,
-        host=PROXY_HOST,
-        port=PROXY_PORT,
-        log_level=PROXY_LOG_LEVEL,
+        host=ProxyConfig.host,
+        port=ProxyConfig.port,
+        log_level=ProxyConfig.log_level,
         access_log=False,
     )
     server = uvicorn.Server(config)
@@ -84,7 +85,7 @@ def _run_proxy_server() -> None:
 
 
 def _start_proxy_thread() -> None:
-    if not PROXY_ENABLED:
+    if not ProxyConfig.enabled():
         return
 
     global _proxy_thread
@@ -99,7 +100,7 @@ def _start_proxy_thread() -> None:
 
 async def _ensure_proxy_ready() -> None:
     assert _http_client is not None  # nosec - initialized during startup
-    deadline = time.monotonic() + PROXY_STARTUP_TIMEOUT
+    deadline = time.monotonic() + ProxyConfig.startup_timeout
     while time.monotonic() < deadline:
         try:
             response = await _http_client.get("/health")
@@ -112,7 +113,7 @@ async def _ensure_proxy_ready() -> None:
 
 
 def _require_http_client() -> httpx.AsyncClient:
-    if not PROXY_ENABLED:
+    if not ProxyConfig.enabled():
         raise HTTPException(
             status_code=503, detail="LiteLLM proxy disabled (no config file)"
         )
@@ -131,13 +132,13 @@ def _serialize_llm_payload(llm_obj: Any) -> Any:
 
 @app.on_event("startup")
 async def _startup_event() -> None:
-    if not PROXY_ENABLED:
+    if not ProxyConfig.enabled():
         return
 
     global _http_client
     _start_proxy_thread()
     if _http_client is None:
-        _http_client = httpx.AsyncClient(base_url=PROXY_BASE_URL, timeout=None)
+        _http_client = httpx.AsyncClient(base_url=ProxyConfig.base_url(), timeout=None)
     await _ensure_proxy_ready()
 
 
@@ -212,7 +213,7 @@ async def proxy_all_other_requests(full_path: str, request: Request) -> Response
         target_path = f"{target_path}?{request.url.query}"
 
     headers = dict(request.headers)
-    headers["host"] = f"{PROXY_HOST}:{PROXY_PORT}"
+    headers["host"] = f"{ProxyConfig.host}:{ProxyConfig.port}"
 
     try:
         proxy_response = await client.request(
@@ -241,10 +242,61 @@ async def proxy_all_other_requests(full_path: str, request: Request) -> Response
 
 
 def cli() -> None:
+    parser = argparse.ArgumentParser(description="MemoriProxy Server")
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind the server to",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind the server to",
+    )
+    parser.add_argument(
+        "--proxy-host",
+        default="127.0.0.1",
+        help="LiteLLM proxy host",
+    )
+    parser.add_argument(
+        "--proxy-port",
+        type=int,
+        default=10001,
+        help="LiteLLM proxy port",
+    )
+    parser.add_argument(
+        "--proxy-timeout",
+        type=float,
+        default=15.0,
+        help="LiteLLM proxy startup timeout",
+    )
+    parser.add_argument(
+        "--proxy-log-level",
+        default="warning",
+        help="LiteLLM proxy log level",
+    )
+    parser.add_argument(
+        "--litellm-config",
+        default=None,
+        help="Path to LiteLLM config file",
+    )
+
+    args = parser.parse_args()
+
+    ProxyConfig.host = args.proxy_host
+    ProxyConfig.port = args.proxy_port
+    ProxyConfig.startup_timeout = args.proxy_timeout
+    ProxyConfig.log_level = args.proxy_log_level
+    if args.litellm_config:
+        path = Path(args.litellm_config)
+        if path.is_file():
+            ProxyConfig.config_path = str(path)
+
     uvicorn.run(
-        "main:app",
-        host=os.getenv("APP_HOST", "0.0.0.0"),
-        port=int(os.getenv("APP_PORT", "8000")),
+        app,
+        host=args.host,
+        port=args.port,
         reload=False,
     )
 
