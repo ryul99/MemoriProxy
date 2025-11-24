@@ -58,6 +58,17 @@ This starts the FastAPI app, bootstraps LiteLLM in a background thread, and expo
 - `POST /v1/chat/completions`
 - Any other path proxied directly to LiteLLM
 
+## Docker
+
+Run with Docker Compose (uses SQLite by default):
+
+```bash
+export MEMORI_AGENTS__OPENAI_API_KEY="sk-..."
+docker compose up --build
+```
+
+The image is built using `uv` for fast dependency resolution. A GitHub Action is included for automated builds.
+
 ## API usage
 ### Non-streaming request
 ```bash

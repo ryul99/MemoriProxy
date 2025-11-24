@@ -1,0 +1,18 @@
+services:
+  memori-proxy:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - memori_data:/data
+    environment:
+      - MEMORI_AGENTS__OPENAI_API_KEY=${MEMORI_AGENTS__OPENAI_API_KEY:-sk-placeholder}
+      - MEMORI_DATABASE__CONNECTION_STRING=sqlite:////data/memori.db
+      - MEMORI_MEMORY__NAMESPACE=production
+      - MEMORI_LOGGING__LEVEL=INFO
+      - MEMORI_DATABASE__POOL_SIZE=20
+      - MEMORI_MEMORY__AUTO_CLEANUP=true
+      - LITELLM_CONFIG_PATH=/config/litellm_config.yaml
+
+volumes:
+  memori_data:
