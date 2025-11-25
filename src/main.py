@@ -5,9 +5,9 @@ import os
 import threading
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator
-from dataclasses import dataclass
 
 import httpx
 import uvicorn
@@ -16,6 +16,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from litellm import completion as litellm_completion
 from litellm.proxy import proxy_server as litellm_proxy_server
 from memori import ConfigManager, Memori
+from memori.core.providers import ProviderConfig
+
 
 @dataclass
 class ProxyConfig:
@@ -50,7 +52,17 @@ EXCLUDED_PROXY_HEADERS = {
 config = ConfigManager()
 config.auto_load()  # Loads from environment or config files
 
-memori = Memori(conscious_ingest=True, auto_ingest=True)
+if os.getenv("OPENAI_BASE_URL"):
+    provider_config = ProviderConfig.from_custom(
+        base_url=os.getenv("OPENAI_BASE_URL"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL"),
+    )
+    memori = Memori(
+        conscious_ingest=True, auto_ingest=True, provider_config=provider_config
+    )
+else:
+    memori = Memori(conscious_ingest=True, auto_ingest=True)
 memori.enable()
 
 app = FastAPI(title="MemoriProxy")
