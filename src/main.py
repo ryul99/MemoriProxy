@@ -22,9 +22,9 @@ from memori.core.providers import ProviderConfig
 class ProxyConfig:
     host: str = "127.0.0.1"
     port: int = 10001
-    startup_timeout: float = 15.0
+    startup_timeout: float = 60.0
     log_level: str = "warning"
-    config_path: str = "./litellm_proxy_config.yaml"
+    config_path: str = "./litellm_config.yaml"
 
     @classmethod
     def base_url(cls) -> str:
