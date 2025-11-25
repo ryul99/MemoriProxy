@@ -161,6 +161,13 @@ async def chat_completions_endpoint(
     except Exception as exc:  # pragma: no cover - FastAPI handles parsing
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
+    # If an Authorization header is present, forward the API key to LiteLLM.
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        api_key = auth_header.split(" ", 1)[1].strip()
+        # Do not overwrite an explicit api_key in the body.
+        payload.setdefault("api_key", api_key)
+
     streaming_requested = bool(payload.pop("stream", False))
 
     if streaming_requested:
