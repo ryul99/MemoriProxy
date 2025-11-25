@@ -26,9 +26,6 @@ COPY litellm_config.yaml .
 # Install the project without re-resolving dependencies
 RUN uv pip install --no-deps .
 
-# Create directory for sqlite db
-RUN mkdir -p /data
-
 # Expose the port
 EXPOSE 8000
 
