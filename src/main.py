@@ -12,18 +12,28 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from litellm import completion
 from memori import ConfigManager, Memori
+from memori.core.providers import ProviderConfig
 
 
 @dataclass
 class UpstreamConfig:
     base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    model: str = os.getenv("OPENAI_MODEL")
     timeout: float = 60.0
 
 
 config = ConfigManager()
 config.auto_load()  # Loads from environment or config files
 
-memori = Memori(conscious_ingest=True, auto_ingest=True)
+provider_config = ProviderConfig.from_custom(
+    base_url=UpstreamConfig.base_url,
+    api_key=os.getenv("OPENAI_API_KEY"),
+    model=UpstreamConfig.model,
+)
+
+memori = Memori(
+    conscious_ingest=True, auto_ingest=True, provider_config=provider_config
+)
 memori.enable()
 
 _http_client: httpx.AsyncClient | None = None
@@ -184,10 +194,16 @@ def cli() -> None:
         default=UpstreamConfig.base_url,
         help="Base URL for the OpenAI-compatible upstream API",
     )
+    parser.add_argument(
+        "--openai-model",
+        default=UpstreamConfig.model,
+        help="Model used for MemoriProxy upstream requests",
+    )
 
     args = parser.parse_args()
 
     UpstreamConfig.base_url = args.openai_base_url
+    UpstreamConfig.model = args.openai_model
     UpstreamConfig.timeout = args.proxy_timeout
 
     uvicorn.run(
