@@ -95,6 +95,10 @@ async def chat_completions_endpoint(
         # Do not overwrite an explicit api_key in the body.
         payload.setdefault("api_key", api_key)
 
+    # litellm removes the first prefix automatically, so we need to add prefix
+    model = payload.get("model")
+    payload["model"] = f"openai/{model}"
+
     streaming_requested = bool(payload.pop("stream", False))
 
     if streaming_requested:
