@@ -21,7 +21,6 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy project files
 COPY src/ src/
-COPY litellm_config.yaml .
 
 # Install the project without re-resolving dependencies
 RUN uv pip install --no-deps .
