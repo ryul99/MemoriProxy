@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator
 
@@ -24,8 +25,6 @@ config.auto_load()  # Loads from environment or config files
 memori = Memori(conscious_ingest=True, auto_ingest=True)
 memori.enable()
 
-app = FastAPI(title="MemoriProxy")
-
 _http_client: httpx.AsyncClient | None = None
 
 
@@ -43,8 +42,8 @@ def _serialize_llm_payload(llm_obj: Any) -> Any:
     return llm_obj
 
 
-@app.on_event("startup")
-async def _startup_event() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global _http_client
     if _http_client is None:
         _http_client = httpx.AsyncClient(
@@ -52,12 +51,15 @@ async def _startup_event() -> None:
             timeout=UpstreamConfig.timeout,
         )
 
+    try:
+        yield
+    finally:
+        client = _http_client
+        if client is not None:
+            await client.aclose()
 
-@app.on_event("shutdown")
-async def _shutdown_event() -> None:
-    client = _http_client
-    if client is not None:
-        await client.aclose()
+
+app = FastAPI(title="MemoriProxy", lifespan=lifespan)
 
 
 @app.post("/chat/completions")
