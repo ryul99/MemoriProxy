@@ -10,7 +10,7 @@ import litellm
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from litellm import completion as litellm_completion
+from litellm import completion
 from memori import ConfigManager, Memori
 
 
@@ -90,7 +90,7 @@ async def chat_completions_endpoint(
     if streaming_requested:
         payload["stream"] = True
         try:
-            llm_stream = litellm_completion(**payload)
+            llm_stream = completion(**payload)
         except Exception as exc:  # pragma: no cover - depends on provider config
             raise HTTPException(
                 status_code=502, detail=f"LiteLLM completion failed: {exc}"
@@ -110,7 +110,7 @@ async def chat_completions_endpoint(
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     try:
-        llm_response = litellm_completion(**payload)
+        llm_response = completion(**payload)
     except Exception as exc:  # pragma: no cover - depends on provider config
         raise HTTPException(
             status_code=502, detail=f"LiteLLM completion failed: {exc}"
