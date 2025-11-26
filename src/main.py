@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterator
 
 import httpx
+import litellm
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -45,6 +46,11 @@ def _serialize_llm_payload(llm_obj: Any) -> Any:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client
+    # Ensure LiteLLM uses the same upstream base URL as the generic HTTP proxy.
+    os.environ["OPENAI_BASE_URL"] = UpstreamConfig.base_url
+    if hasattr(litellm, "api_base"):
+        litellm.api_base = UpstreamConfig.base_url
+
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             base_url=UpstreamConfig.base_url,
