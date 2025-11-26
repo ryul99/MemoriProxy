@@ -1,17 +1,16 @@
 # MemoriProxy
 
-MemoriProxy is a FastAPI service that embeds [Memori](https://github.com/GibsonAI/Memori) context-aware memory into any LiteLLM workflow. It boots a LiteLLM proxy in-process, enriches every call through the Memori SDK, and exposes a friendly `/chat/completions` endpoint with both standard and streaming responses.
+MemoriProxy is a FastAPI service that embeds [Memori](https://github.com/GibsonAI/Memori) context-aware memory into any LiteLLM workflow. It enriches every call through the Memori SDK, exposes a friendly `/chat/completions` endpoint with both standard and streaming responses, and forwards all other routes directly to an OpenAI-compatible upstream API.
 
 ## Features
 - **Chat Completions API** mirroring the OpenAI-compatible `/v1/chat/completions` contract
 - **Server-Sent Events (SSE) streaming** support with `[DONE]` termination tokens
-- **Automatic LiteLLM proxy management** (startup, readiness check, graceful shutdown)
 - **Memori conscious ingestion** enabled by default for contextual memory
-- **Catch-all HTTP proxy** so non-chat routes still flow through LiteLLM
+- **Catch-all HTTP proxy** so non-chat routes are forwarded unchanged to your upstream (e.g. `https://api.openai.com`)
 
 ## Requirements
 - Python 3.12+
-- Access to providers configured through LiteLLM (see `litellm_config.yaml`)
+- Access to providers configured through LiteLLM (via environment variables or your own config)
 - Optional: `uv` or `pip` for dependency installation
 
 ## Installation
@@ -25,38 +24,38 @@ uv tool install https://github.com/ryul99/MemoriProxy.git
 ```
 
 ## Configuration
-Configuration is primarily handled via command-line arguments.
+Configuration is primarily handled via command-line arguments and environment variables.
+
+Runtime arguments:
 
 | Argument | Default | Description |
 | --- | --- | --- |
 | `--host` | `0.0.0.0` | Host to bind the server to. |
 | `--port` | `8000` | Port to bind the server to. |
-| `--proxy-host` | `127.0.0.1` | Hostname for the embedded LiteLLM proxy. |
-| `--proxy-port` | `10001` | Port for the proxy server. |
-| `--proxy-timeout` | `15.0` | Seconds to wait for proxy readiness. |
-| `--proxy-log-level` | `warning` | Logging level fed to Uvicorn for the proxy. |
-| `--litellm-config` | `None` | Path to the LiteLLM YAML config (e.g., `./litellm_config.yaml`). |
+| `--proxy-timeout` | `15.0` | Timeout in seconds for upstream HTTP requests. |
+| `--openai-base-url` | `https://api.openai.com` (or `OPENAI_BASE_URL`) | Base URL for the OpenAI-compatible upstream API. |
+
+**Environment variables:**
+- `OPENAI_BASE_URL` (optional): Base URL for the upstream API (e.g., `https://api.openai.com`).
 
 **Memori Configuration:**
 Memori settings are managed through `ConfigManager.auto_load()`, so they continue to use environment variables (e.g., `MEMORI_LOGGING__LEVEL=DEBUG`) or config files.
 
-> ℹ️ Use `--litellm-config` to point to a valid LiteLLM config file to bootstrap the embedded proxy; if omitted or the file is missing, proxying routes return `503` and no background server is launched.
-
 ## Running the server
 After installing the project (`pip install .` or `pip install -e .`), you can start it with the CLI:
 ```bash
-memori-proxy --port 4000 --litellm-config ./litellm_config.yaml
+memori-proxy --port 4000 --openai-base-url https://api.openai.com
 ```
 
 Or running from source:
 ```bash
-python src/main.py --port 4000 --litellm-config ./litellm_config.yaml
+python src/main.py --port 4000 --openai-base-url https://api.openai.com
 ```
 
-This starts the FastAPI app, bootstraps LiteLLM in a background thread, and exposes:
+This starts the FastAPI app, initializes Memori, and exposes:
 - `POST /chat/completions`
 - `POST /v1/chat/completions`
-- Any other path proxied directly to LiteLLM
+- Any other path proxied directly to the configured upstream API
 
 ## Docker
 

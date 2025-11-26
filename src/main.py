@@ -1,9 +1,6 @@
 import argparse
-import asyncio
 import json
-import threading
-import time
-from contextlib import suppress
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator
 
@@ -12,34 +9,13 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from litellm import completion as litellm_completion
-from litellm.proxy import proxy_server as litellm_proxy_server
 from memori import ConfigManager, Memori
 
 
 @dataclass
-class ProxyConfig:
-    host: str = "127.0.0.1"
-    port: int = 10001
-    startup_timeout: float = 60.0
-    log_level: str = "warning"
-    config_path: str = "./litellm_config.yaml"
-
-    @classmethod
-    def base_url(cls) -> str:
-        return f"http://{cls.host}:{cls.port}"
-
-
-EXCLUDED_PROXY_HEADERS = {
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailers",
-    "upgrade",
-}
+class UpstreamConfig:
+    base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    timeout: float = 60.0
 
 
 config = ConfigManager()
@@ -50,62 +26,12 @@ memori.enable()
 
 app = FastAPI(title="MemoriProxy")
 
-_proxy_thread: threading.Thread | None = None
-_proxy_server_ref: dict[str, uvicorn.Server | None] = {"server": None}
 _http_client: httpx.AsyncClient | None = None
-
-
-def _run_proxy_server() -> None:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    litellm_proxy_server.user_config_file_path = ProxyConfig.config_path
-
-    loop.run_until_complete(
-        litellm_proxy_server.initialize(config=ProxyConfig.config_path)
-    )
-
-    config = uvicorn.Config(
-        litellm_proxy_server.app,
-        host=ProxyConfig.host,
-        port=ProxyConfig.port,
-        log_level=ProxyConfig.log_level,
-        access_log=False,
-    )
-    server = uvicorn.Server(config)
-    _proxy_server_ref["server"] = server
-    with suppress(KeyboardInterrupt):
-        loop.run_until_complete(server.serve())
-
-
-def _start_proxy_thread() -> None:
-    global _proxy_thread
-    if _proxy_thread and _proxy_thread.is_alive():
-        return
-
-    _proxy_thread = threading.Thread(
-        target=_run_proxy_server, name="litellm-proxy", daemon=True
-    )
-    _proxy_thread.start()
-
-
-async def _ensure_proxy_ready() -> None:
-    assert _http_client is not None  # nosec - initialized during startup
-    deadline = time.monotonic() + ProxyConfig.startup_timeout
-    while time.monotonic() < deadline:
-        try:
-            response = await _http_client.get("/health")
-            if response.status_code < 500:
-                return
-        except httpx.HTTPError:
-            pass
-        await asyncio.sleep(0.2)
-    raise RuntimeError("LiteLLM proxy failed to start before timeout")
 
 
 def _require_http_client() -> httpx.AsyncClient:
     if _http_client is None:
-        raise HTTPException(status_code=503, detail="LiteLLM proxy is not ready")
+        raise HTTPException(status_code=503, detail="Upstream service is not ready")
     return _http_client
 
 
@@ -120,10 +46,11 @@ def _serialize_llm_payload(llm_obj: Any) -> Any:
 @app.on_event("startup")
 async def _startup_event() -> None:
     global _http_client
-    _start_proxy_thread()
     if _http_client is None:
-        _http_client = httpx.AsyncClient(base_url=ProxyConfig.base_url(), timeout=None)
-    await _ensure_proxy_ready()
+        _http_client = httpx.AsyncClient(
+            base_url=UpstreamConfig.base_url,
+            timeout=UpstreamConfig.timeout,
+        )
 
 
 @app.on_event("shutdown")
@@ -131,12 +58,6 @@ async def _shutdown_event() -> None:
     client = _http_client
     if client is not None:
         await client.aclose()
-    server = _proxy_server_ref.get("server")
-    if server is not None:
-        server.should_exit = True
-    thread = _proxy_thread
-    if thread is not None:
-        thread.join(timeout=5)
 
 
 @app.post("/chat/completions")
@@ -203,8 +124,9 @@ async def proxy_all_other_requests(full_path: str, request: Request) -> Response
     if request.url.query:
         target_path = f"{target_path}?{request.url.query}"
 
-    headers = dict(request.headers)
-    headers["host"] = f"{ProxyConfig.host}:{ProxyConfig.port}"
+    headers = {
+        key: value for key, value in request.headers.items() if key.lower() != "host"
+    }
 
     try:
         proxy_response = await client.request(
@@ -225,8 +147,6 @@ async def proxy_all_other_requests(full_path: str, request: Request) -> Response
     )
 
     for key, value in proxy_response.headers.items():
-        if key.lower() in EXCLUDED_PROXY_HEADERS:
-            continue
         forwarded_response.headers[key] = value
 
     return forwarded_response
@@ -246,34 +166,21 @@ def cli() -> None:
         help="Port to bind the server to",
     )
     parser.add_argument(
-        "--proxy-host",
-        default="127.0.0.1",
-        help="LiteLLM proxy host",
-    )
-    parser.add_argument(
-        "--proxy-port",
-        type=int,
-        default=10001,
-        help="LiteLLM proxy port",
-    )
-    parser.add_argument(
         "--proxy-timeout",
         type=float,
         default=15.0,
-        help="LiteLLM proxy startup timeout",
+        help="Timeout in seconds for upstream HTTP requests",
     )
     parser.add_argument(
-        "--proxy-log-level",
-        default="warning",
-        help="LiteLLM proxy log level",
+        "--openai-base-url",
+        default=UpstreamConfig.base_url,
+        help="Base URL for the OpenAI-compatible upstream API",
     )
 
     args = parser.parse_args()
 
-    ProxyConfig.host = args.proxy_host
-    ProxyConfig.port = args.proxy_port
-    ProxyConfig.startup_timeout = args.proxy_timeout
-    ProxyConfig.log_level = args.proxy_log_level
+    UpstreamConfig.base_url = args.openai_base_url
+    UpstreamConfig.timeout = args.proxy_timeout
 
     uvicorn.run(
         app,
